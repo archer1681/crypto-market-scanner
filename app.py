@@ -1,39 +1,28 @@
 import streamlit as st
-import pandas as pd
-
-from coins import COINS
-from binance_data import get_all_prices
-
+import requests
 
 st.set_page_config(
-    page_title="Kripto Piyasa Tarayıcısı",
+    page_title="Binance Bağlantı Testi",
     layout="wide"
 )
 
-st.title("Kripto Piyasa Tarayıcısı")
+st.title("Binance Bağlantı Testi")
 
-data = get_all_prices(COINS)
+url = "https://fapi.binance.com/fapi/v1/ticker/24hr"
+params = {"symbol": "BTCUSDT"}
 
-df = pd.DataFrame(data)
-
-if not df.empty:
-    df = df.sort_values(
-        by="change_24h",
-        ascending=False
+try:
+    response = requests.get(
+        url,
+        params=params,
+        timeout=10,
+        headers={"User-Agent": "Mozilla/5.0"}
     )
 
-    df = df.rename(columns={
-        "symbol": "Coin",
-        "price": "Fiyat",
-        "change_24h": "24s %",
-        "volume": "Günlük Hacim"
-    })
+    st.write("HTTP durum kodu:", response.status_code)
+    st.write("Binance cevabı:")
+    st.code(response.text)
 
-    st.dataframe(
-        df,
-        use_container_width=True,
-        hide_index=True
-    )
-
-else:
-    st.warning("Binance verisi alınamadı.")
+except Exception as e:
+    st.error("Bağlantı hatası:")
+    st.code(str(e))
