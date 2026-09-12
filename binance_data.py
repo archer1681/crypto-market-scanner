@@ -1,6 +1,7 @@
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import lru_cache
 
 
 BASE_URL = "https://www.okx.com"
@@ -10,15 +11,13 @@ HEADERS = {
 }
 
 
-# ---------------------------------------------------------
-# OKX ISTEK MOTORU
-# ---------------------------------------------------------
+# =========================================================
+# OKX İSTEK MOTORU
+# =========================================================
 
 def okx_get(path, params=None):
-    url = BASE_URL + path
-
     response = requests.get(
-        url,
+        BASE_URL + path,
         params=params,
         headers=HEADERS,
         timeout=(5, 12)
@@ -26,35 +25,32 @@ def okx_get(path, params=None):
 
     response.raise_for_status()
 
-    data = response.json()
+    payload = response.json()
 
-    if data.get("code") != "0":
+    if payload.get("code") != "0":
         raise RuntimeError(
-            f"OKX hata kodu: {data.get('code')} - "
-            f"{data.get('msg')}"
+            f"OKX hata: {payload.get('code')} - "
+            f"{payload.get('msg')}"
         )
 
-    return data.get("data", [])
+    return payload.get("data", [])
 
 
-# ---------------------------------------------------------
-# BINANCE SEMBOLÜ -> OKX SEMBOLÜ
+# =========================================================
 # BTCUSDT -> BTC-USDT-SWAP
-# ---------------------------------------------------------
+# =========================================================
 
 def to_okx_symbol(symbol):
     if not symbol.endswith("USDT"):
         return None
 
-    base = symbol[:-4]
-
-    return f"{base}-USDT-SWAP"
+    return f"{symbol[:-4]}-USDT-SWAP"
 
 
-# ---------------------------------------------------------
-# TÜM OKX USDT SWAP FİYATLARI
-# Tek API isteği
-# ---------------------------------------------------------
+# =========================================================
+# TÜM ANLIK FİYATLAR
+# TEK API İSTEĞİ
+# =========================================================
 
 def get_all_tickers():
     rows = okx_get(
@@ -62,7 +58,7 @@ def get_all_tickers():
         {"instType": "SWAP"}
     )
 
-    result = {}
+    prices = {}
 
     for row in rows:
         inst_id = row.get("instId", "")
@@ -71,16 +67,16 @@ def get_all_tickers():
             continue
 
         try:
-            result[inst_id] = float(row["last"])
-        except (ValueError, TypeError, KeyError):
-            continue
+            prices[inst_id] = float(row["last"])
+        except Exception:
+            pass
 
-    return result
+    return prices
 
 
-# ---------------------------------------------------------
+# =========================================================
 # MUM VERİSİ
-# ---------------------------------------------------------
+# =========================================================
 
 def get_candles(inst_id, bar, limit):
     rows = okx_get(
@@ -102,109 +98,197 @@ def get_candles(inst_id, bar, limit):
                 "high": float(row[2]),
                 "low": float(row[3]),
                 "close": float(row[4]),
-
-                # OKX quote currency volume
-                # USDT swap için yaklaşık USDT hacmi
                 "volume": float(row[7]),
-
-                # 1 = kapanmış mum
-                # 0 = halen açık mum
                 "confirm": str(row[8])
             })
-
-        except (ValueError, TypeError, IndexError):
+        except Exception:
             continue
 
-    # OKX yeniyi önce gönderiyor.
-    # Hesaplama için eskiden yeniye çeviriyoruz.
-    candles.sort(
-        key=lambda x: x["ts"]
-    )
+    candles.sort(key=lambda x: x["ts"])
 
     return candles
 
 
-# ---------------------------------------------------------
-# DÖNEM OHLC
-# ---------------------------------------------------------
+# =========================================================
+# TÜRKİYE 03:00 = YENİ KRİPTO GÜNÜ
+#
+# Bu anahtar yalnızca 03:00'te değişir.
+# Geçmiş veri önbelleğinin yenilenmesini sağlar.
+# =========================================================
 
-def period_ohlc(candles, period):
+def market_day_key():
+    now_utc = datetime.now(timezone.utc)
+
+    # Türkiye 03:00 = UTC 00:00
+    return now_utc.date().isoformat()
+
+
+# =========================================================
+# TARİH YARDIMCISI
+# =========================================================
+
+def candle_datetime(candle):
+    return datetime.fromtimestamp(
+        candle["ts"] / 1000,
+        tz=timezone.utc
+    )
+
+
+# =========================================================
+# OHLC BİRLEŞTİRME
+# =========================================================
+
+def combine_ohlc(candles, current_price=None):
     if not candles:
         return None
 
-    now = datetime.now(timezone.utc)
-    selected = []
+    candles = sorted(
+        candles,
+        key=lambda x: x["ts"]
+    )
 
-    for candle in candles:
+    result = {
+        "open": candles[0]["open"],
+        "high": max(x["high"] for x in candles),
+        "low": min(x["low"] for x in candles),
+        "close": candles[-1]["close"]
+    }
 
-        dt = datetime.fromtimestamp(
-            candle["ts"] / 1000,
-            tz=timezone.utc
-        )
+    if current_price is not None:
+        result["close"] = current_price
 
-        if period == "day":
+    return result
 
-            match = (
-                dt.year == now.year
-                and dt.month == now.month
-                and dt.day == now.day
-            )
 
-        elif period == "week":
+# =========================================================
+# DEĞİŞMEYEN GEÇMİŞ VERİ
+#
+# Bir coin için bu bölüm aynı kripto günü içerisinde
+# yalnızca 1 kez indirilir.
+# =========================================================
 
-            a = dt.isocalendar()
-            b = now.isocalendar()
+def build_coin_history(symbol):
+    inst_id = to_okx_symbol(symbol)
 
-            match = (
-                a.year == b.year
-                and a.week == b.week
-            )
-
-        elif period == "month":
-
-            match = (
-                dt.year == now.year
-                and dt.month == now.month
-            )
-
-        elif period == "year":
-
-            match = (
-                dt.year == now.year
-            )
-
-        else:
-            match = False
-
-        if match:
-            selected.append(candle)
-
-    if not selected:
+    if not inst_id:
         return None
 
+    daily = get_candles(
+        inst_id,
+        "1Dutc",
+        40
+    )
+
+    monthly = get_candles(
+        inst_id,
+        "1Mutc",
+        12
+    )
+
+    # Sadece kapanmış mumlar
+    completed_daily = [
+        c for c in daily
+        if c["confirm"] == "1"
+    ]
+
+    completed_monthly = [
+        c for c in monthly
+        if c["confirm"] == "1"
+    ]
+
+    if len(completed_daily) < 14:
+        return None
+
+    # Son 5 tamamlanmış günlük mum
+    last_5 = completed_daily[-5:]
+
+    colors = "".join(
+        "🟢" if c["close"] >= c["open"] else "🔴"
+        for c in last_5
+    )
+
+    # Son 14 tamamlanmış gün hacim ortalaması
+    last_14 = completed_daily[-14:]
+
+    avg_14_volume = (
+        sum(c["volume"] for c in last_14)
+        / len(last_14)
+    )
+
     return {
-        "open": selected[0]["open"],
-
-        "high": max(
-            x["high"]
-            for x in selected
-        ),
-
-        "low": min(
-            x["low"]
-            for x in selected
-        ),
-
-        "close": selected[-1]["close"]
+        "inst_id": inst_id,
+        "daily": completed_daily,
+        "monthly": completed_monthly,
+        "last_5": colors,
+        "avg_14_volume": avg_14_volume
     }
 
 
-# ---------------------------------------------------------
+# =========================================================
+# GÜNLÜK GEÇMİŞ CACHE
+#
+# day_key değişmediği sürece tekrar çalışmaz.
+# =========================================================
+
+@lru_cache(maxsize=8)
+def get_history_snapshot(coins_tuple, day_key):
+    results = {}
+
+    with ThreadPoolExecutor(
+        max_workers=3
+    ) as executor:
+
+        futures = {
+            executor.submit(
+                build_coin_history,
+                symbol
+            ): symbol
+
+            for symbol in coins_tuple
+        }
+
+        for future in as_completed(futures):
+            symbol = futures[future]
+
+            try:
+                result = future.result()
+
+                if result:
+                    results[symbol] = result
+
+            except Exception as e:
+                print(
+                    f"Geçmiş veri {symbol}: {e}"
+                )
+
+    return results
+
+
+# =========================================================
+# BUGÜNKÜ CANLI MUM
+#
+# Gün içinde değişen esas OHLC bilgisi budur.
+# =========================================================
+
+def get_live_day(inst_id):
+    candles = get_candles(
+        inst_id,
+        "1Dutc",
+        1
+    )
+
+    if not candles:
+        return None
+
+    return candles[-1]
+
+
+# =========================================================
 # YÜZDE HESAPLARI
-# ---------------------------------------------------------
+# =========================================================
 
 def change_percent(price, base):
-    if base == 0:
+    if not base:
         return 0.0
 
     return (
@@ -224,7 +308,6 @@ def location_percent(price, high, low):
         * 100
     )
 
-    # Anlık sapmalarda tablo 0-100 dışına taşmasın
     return max(
         0.0,
         min(100.0, value)
@@ -232,7 +315,7 @@ def location_percent(price, high, low):
 
 
 def distance_percent(price, level):
-    if price == 0:
+    if not price:
         return 0.0
 
     return (
@@ -242,88 +325,120 @@ def distance_percent(price, level):
     )
 
 
-# ---------------------------------------------------------
-# TEK COIN ANALİZİ
-# ---------------------------------------------------------
+# =========================================================
+# TEK COIN HESAPLAMA
+# =========================================================
 
-def analyze_coin(symbol, ticker_map):
+def calculate_coin(
+    symbol,
+    history,
+    live_day,
+    price
+):
 
-    inst_id = to_okx_symbol(symbol)
-
-    if not inst_id:
+    if not history or not live_day:
         return None
 
-    # OKX'te olmayan Binance coinlerini otomatik atla
-    if inst_id not in ticker_map:
-        return None
+    now = datetime.now(timezone.utc)
 
-    price = ticker_map[inst_id]
-
-    # Gün / hafta / ay + son 5 gün + hacim için
-    # 40 günlük veri yeterli
-    daily = get_candles(
-        inst_id,
-        "1Dutc",
-        40
-    )
-
-    # Yıllık OHLC için aylık mumları kullanıyoruz.
-    # Böylece yıl sonunda 300 günlük veri sınırı sorunu olmaz.
-    monthly = get_candles(
-        inst_id,
-        "1Mutc",
-        12
-    )
-
-    if not daily or not monthly:
-        return None
-
-    day = period_ohlc(
-        daily,
-        "day"
-    )
-
-    week = period_ohlc(
-        daily,
-        "week"
-    )
-
-    month = period_ohlc(
-        daily,
-        "month"
-    )
-
-    year = period_ohlc(
-        monthly,
-        "year"
-    )
-
-    if not all([
-        day,
-        week,
-        month,
-        year
-    ]):
-        return None
+    completed_daily = history["daily"]
+    completed_monthly = history["monthly"]
 
 
     # -----------------------------------------------------
-    # SON 5 TAMAMLANMIŞ GÜNLÜK MUM
+    # GÜN
     # -----------------------------------------------------
 
-    completed = [
-        candle
-        for candle in daily
-        if candle["confirm"] == "1"
-    ]
+    day = {
+        "open": live_day["open"],
+        "high": live_day["high"],
+        "low": live_day["low"],
+        "close": price
+    }
 
-    last_5 = completed[-5:]
 
-    colors = "".join(
-        "🟢"
-        if c["close"] >= c["open"]
-        else "🔴"
-        for c in last_5
+    # -----------------------------------------------------
+    # HAFTA
+    # -----------------------------------------------------
+
+    now_iso = now.isocalendar()
+
+    week_candles = []
+
+    for candle in completed_daily:
+        dt = candle_datetime(candle)
+        iso = dt.isocalendar()
+
+        if (
+            iso.year == now_iso.year
+            and iso.week == now_iso.week
+        ):
+            week_candles.append(candle)
+
+    week_candles.append(live_day)
+
+    week = combine_ohlc(
+        week_candles,
+        price
+    )
+
+
+    # -----------------------------------------------------
+    # AY
+    # -----------------------------------------------------
+
+    month_candles = []
+
+    for candle in completed_daily:
+        dt = candle_datetime(candle)
+
+        if (
+            dt.year == now.year
+            and dt.month == now.month
+        ):
+            month_candles.append(candle)
+
+    month_candles.append(live_day)
+
+    month = combine_ohlc(
+        month_candles,
+        price
+    )
+
+
+    # -----------------------------------------------------
+    # YIL
+    #
+    # Önce tamamlanmış aylık mumlar,
+    # sonra mevcut ayın canlı OHLC'si.
+    # -----------------------------------------------------
+
+    year_parts = []
+
+    for candle in completed_monthly:
+        dt = candle_datetime(candle)
+
+        if dt.year == now.year:
+            year_parts.append(candle)
+
+    # Mevcut ayı sentetik mum olarak ekle
+    current_month_candle = {
+        "ts": live_day["ts"],
+        "open": month["open"],
+        "high": month["high"],
+        "low": month["low"],
+        "close": price,
+        "volume": 0,
+        "confirm": "0"
+    }
+
+    year_parts.append(
+        current_month_candle
+    )
+
+    year = combine_ohlc(
+        year_parts,
+        price
     )
 
 
@@ -331,42 +446,24 @@ def analyze_coin(symbol, ticker_map):
     # HACİM
     # -----------------------------------------------------
 
-    current_daily = daily[-1]
+    today_volume = live_day["volume"]
 
-    today_volume = current_daily[
-        "volume"
+    avg_14_volume = history[
+        "avg_14_volume"
     ]
 
-    previous_14 = completed[-14:]
-
-    if previous_14:
-
-        avg_14_volume = (
-            sum(
-                c["volume"]
-                for c in previous_14
-            )
-            / len(previous_14)
-        )
-
-    else:
-        avg_14_volume = 0.0
-
-
     if avg_14_volume > 0:
-
         volume_vs_14 = (
             (today_volume - avg_14_volume)
             / avg_14_volume
             * 100
         )
-
     else:
         volume_vs_14 = 0.0
 
 
     # -----------------------------------------------------
-    # ANA SONUÇ
+    # SONUÇ
     # -----------------------------------------------------
 
     return {
@@ -394,12 +491,11 @@ def analyze_coin(symbol, ticker_map):
             else "ALTI"
         ),
 
-        # ---------- GÜN ----------
-
+        # GÜN
         "Gün O": day["open"],
         "Gün H": day["high"],
         "Gün L": day["low"],
-        "Gün C": day["close"],
+        "Gün C": price,
 
         "Gün Konum %": location_percent(
             price,
@@ -407,12 +503,11 @@ def analyze_coin(symbol, ticker_map):
             day["low"]
         ),
 
-        # ---------- HAFTA ----------
-
+        # HAFTA
         "Hafta O": week["open"],
         "Hafta H": week["high"],
         "Hafta L": week["low"],
-        "Hafta C": week["close"],
+        "Hafta C": price,
 
         "Hafta Konum %": location_percent(
             price,
@@ -420,12 +515,11 @@ def analyze_coin(symbol, ticker_map):
             week["low"]
         ),
 
-        # ---------- AY ----------
-
+        # AY
         "Ay O": month["open"],
         "Ay H": month["high"],
         "Ay L": month["low"],
-        "Ay C": month["close"],
+        "Ay C": price,
 
         "Ay Konum %": location_percent(
             price,
@@ -433,12 +527,11 @@ def analyze_coin(symbol, ticker_map):
             month["low"]
         ),
 
-        # ---------- YIL ----------
-
+        # YIL
         "Yıl O": year["open"],
         "Yıl H": year["high"],
         "Yıl L": year["low"],
-        "Yıl C": year["close"],
+        "Yıl C": price,
 
         "Yıl Konum %": location_percent(
             price,
@@ -446,8 +539,7 @@ def analyze_coin(symbol, ticker_map):
             year["low"]
         ),
 
-        # ---------- UZAKLIK ----------
-
+        # UZAKLIK
         "Gün H Uzaklık %": distance_percent(
             price,
             day["high"]
@@ -458,12 +550,12 @@ def analyze_coin(symbol, ticker_map):
             day["low"]
         ),
 
-        # ---------- MOMENTUM ----------
+        # SON 5 KAPANMIŞ MUM
+        "Son 5 Gün": history[
+            "last_5"
+        ],
 
-        "Son 5 Gün": colors,
-
-        # ---------- HACİM ----------
-
+        # HACİM
         "Gün Hacim USDT": today_volume,
 
         "14G Ort Hacim": avg_14_volume,
@@ -472,32 +564,65 @@ def analyze_coin(symbol, ticker_map):
     }
 
 
-# ---------------------------------------------------------
-# TÜM TARAYICI
-# ---------------------------------------------------------
+# =========================================================
+# ANA TARAYICI
+# =========================================================
 
 def get_scanner_data(coins):
 
-    # Bütün anlık fiyatları yalnızca 1 istekte al
+    coins_tuple = tuple(coins)
+
+    # 03:00'te değişen günlük cache anahtarı
+    day_key = market_day_key()
+
+    # Geçmiş veri aynı gün içinde cache'den gelir.
+    history_map = get_history_snapshot(
+        coins_tuple,
+        day_key
+    )
+
+    # Bütün anlık fiyatlar yalnızca 1 API isteği
     ticker_map = get_all_tickers()
 
     results = []
 
-    # OKX limitlerini zorlamamak için 2 paralel işçi.
-    # Her coin 2 mum isteği yapıyor.
+
+    # -----------------------------------------------------
+    # Sadece bugünkü günlük mumları yenile
+    # -----------------------------------------------------
+
+    live_days = {}
+
     with ThreadPoolExecutor(
-        max_workers=2
+        max_workers=4
     ) as executor:
 
-        futures = {
-            executor.submit(
-                analyze_coin,
-                symbol,
-                ticker_map
-            ): symbol
+        futures = {}
 
-            for symbol in coins
-        }
+        for symbol in coins:
+
+            history = history_map.get(
+                symbol
+            )
+
+            if not history:
+                continue
+
+            inst_id = history[
+                "inst_id"
+            ]
+
+            # OKX'te hâlâ mevcut mu?
+            if inst_id not in ticker_map:
+                continue
+
+            futures[
+                executor.submit(
+                    get_live_day,
+                    inst_id
+                )
+            ] = symbol
+
 
         for future in as_completed(
             futures
@@ -506,17 +631,55 @@ def get_scanner_data(coins):
             symbol = futures[future]
 
             try:
-                result = future.result()
+                live_day = future.result()
 
-                if result:
-                    results.append(
-                        result
-                    )
+                if live_day:
+                    live_days[
+                        symbol
+                    ] = live_day
 
             except Exception as e:
-
                 print(
-                    f"{symbol} hata: {e}"
+                    f"Canlı mum {symbol}: {e}"
                 )
+
+
+    # -----------------------------------------------------
+    # API YOK: sadece yerel hesaplama
+    # -----------------------------------------------------
+
+    for symbol in coins:
+
+        history = history_map.get(
+            symbol
+        )
+
+        live_day = live_days.get(
+            symbol
+        )
+
+        if not history or not live_day:
+            continue
+
+        inst_id = history[
+            "inst_id"
+        ]
+
+        price = ticker_map.get(
+            inst_id
+        )
+
+        if price is None:
+            continue
+
+        result = calculate_coin(
+            symbol,
+            history,
+            live_day,
+            price
+        )
+
+        if result:
+            results.append(result)
 
     return results
