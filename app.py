@@ -18,7 +18,22 @@ TEST_COINS = [
     "ETHUSDT",
     "SOLUSDT",
     "XRPUSDT",
-    "AAVEUSDT"
+    "AAVEUSDT",
+    "ADAUSDT",
+    "AVAXUSDT",
+    "BNBUSDT",
+    "DOGEUSDT",
+    "LINKUSDT",
+    "LTCUSDT",
+    "DOTUSDT",
+    "ATOMUSDT",
+    "NEARUSDT",
+    "OPUSDT",
+    "ARBUSDT",
+    "SUIUSDT",
+    "INJUSDT",
+    "TRXUSDT",
+    "UNIUSDT"
 ]
 
 
