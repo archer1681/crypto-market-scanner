@@ -1026,3 +1026,547 @@ def build_month_open_map(
             )
 
    
+    return result
+
+
+# =========================================================
+# HAFTALIK AÇILIŞ HARİTASI
+#
+# Her günlük mumun ait olduğu haftanın ilk açılışını tutar.
+# =========================================================
+
+def build_week_open_map(
+    completed_daily
+):
+
+    result = {}
+
+    candles = sorted(
+        completed_daily,
+        key=lambda x: x["ts"]
+    )
+
+    for candle in candles:
+
+        key = week_key(
+            candle
+        )
+
+        if key not in result:
+
+            result[key] = (
+                candle["open"]
+            )
+
+    return result
+
+
+# =========================================================
+# HAFTALIK 4 KUTU
+#
+# İç renk:
+# Haftalık mum yönü
+#
+# Arka plan:
+# Haftalık kapanış ilgili aylık açılışın
+# altındaysa MOR
+# =========================================================
+
+def make_weekly_flow(
+    completed_daily
+):
+
+    weeks = build_completed_weeks(
+        completed_daily
+    )
+
+    month_open_map = (
+        build_month_open_map(
+            completed_daily
+        )
+    )
+
+    result = []
+
+    for candle in weeks[-4:]:
+
+        close_dt = datetime.fromtimestamp(
+            candle["close_ts"] / 1000,
+            tz=timezone.utc
+        )
+
+        m_key = (
+            close_dt.year,
+            close_dt.month
+        )
+
+        monthly_open = (
+            month_open_map.get(
+                m_key
+            )
+        )
+
+        below_parent_open = False
+
+        if monthly_open is not None:
+
+            below_parent_open = (
+                candle["close"]
+                < monthly_open
+            )
+
+        result.append({
+            "direction": candle_direction(
+                candle
+            ),
+
+            "below_parent_open":
+                below_parent_open
+        })
+
+    return result
+
+
+# =========================================================
+# GÜNLÜK 7 KUTU
+#
+# İç renk:
+# Günlük mum yönü
+#
+# Arka plan:
+# Günlük kapanış ait olduğu haftanın
+# açılışının altındaysa MAVİ
+# =========================================================
+
+def make_daily_flow(
+    completed_daily
+):
+
+    week_open_map = (
+        build_week_open_map(
+            completed_daily
+        )
+    )
+
+    result = []
+
+    for candle in completed_daily[-7:]:
+
+        w_key = week_key(
+            candle
+        )
+
+        weekly_open = (
+            week_open_map.get(
+                w_key
+            )
+        )
+
+        below_parent_open = False
+
+        if weekly_open is not None:
+
+            below_parent_open = (
+                candle["close"]
+                < weekly_open
+            )
+
+        result.append({
+            "direction": candle_direction(
+                candle
+            ),
+
+            "below_parent_open":
+                below_parent_open
+        })
+
+    return result
+
+
+# =========================================================
+# 4 SAATLİK MUM AKIŞI
+#
+# Son 6 KAPANMIŞ 4H mum
+# =========================================================
+
+def get_symbol_h4_flow(
+    symbol
+):
+
+    inst_id = to_okx_symbol(
+        symbol
+    )
+
+    if not inst_id:
+        return None
+
+    candles = get_candles(
+        inst_id,
+        "4H",
+        10
+    )
+
+    completed = [
+        c
+        for c in candles
+        if c["confirm"] == "1"
+    ]
+
+    completed = completed[-6:]
+
+    if len(completed) < 6:
+        return None
+
+    return [
+        {
+            "direction":
+                candle_direction(
+                    candle
+                ),
+
+            "below_parent_open":
+                False
+        }
+
+        for candle in completed
+    ]
+
+
+# =========================================================
+# 1 SAATLİK MUM AKIŞI
+#
+# Son 4 KAPANMIŞ 1H mum
+# =========================================================
+
+def get_symbol_h1_flow(
+    symbol
+):
+
+    inst_id = to_okx_symbol(
+        symbol
+    )
+
+    if not inst_id:
+        return None
+
+    candles = get_candles(
+        inst_id,
+        "1H",
+        8
+    )
+
+    completed = [
+        c
+        for c in candles
+        if c["confirm"] == "1"
+    ]
+
+    completed = completed[-4:]
+
+    if len(completed) < 4:
+        return None
+
+    return [
+        {
+            "direction":
+                candle_direction(
+                    candle
+                ),
+
+            "below_parent_open":
+                False
+        }
+
+        for candle in completed
+    ]
+
+
+# =========================================================
+# 4H CACHE
+#
+# Aynı 4 saatlik blok içinde tekrar çekilmez.
+# =========================================================
+
+@lru_cache(maxsize=8)
+def get_h4_flow_snapshot(
+    coins_tuple,
+    four_hour_key
+):
+
+    results = {}
+
+    with ThreadPoolExecutor(
+        max_workers=4
+    ) as executor:
+
+        futures = {
+            executor.submit(
+                get_symbol_h4_flow,
+                symbol
+            ): symbol
+
+            for symbol in coins_tuple
+        }
+
+        for future in as_completed(
+            futures
+        ):
+
+            symbol = futures[
+                future
+            ]
+
+            try:
+
+                value = future.result()
+
+                if value:
+
+                    results[
+                        symbol
+                    ] = value
+
+            except Exception as e:
+
+                print(
+                    f"4H Mum Akışı "
+                    f"{symbol}: {e}"
+                )
+
+    return results
+
+
+# =========================================================
+# 1H CACHE
+#
+# Aynı saat içinde tekrar çekilmez.
+# =========================================================
+
+@lru_cache(maxsize=8)
+def get_h1_flow_snapshot(
+    coins_tuple,
+    hour_key
+):
+
+    results = {}
+
+    with ThreadPoolExecutor(
+        max_workers=4
+    ) as executor:
+
+        futures = {
+            executor.submit(
+                get_symbol_h1_flow,
+                symbol
+            ): symbol
+
+            for symbol in coins_tuple
+        }
+
+        for future in as_completed(
+            futures
+        ):
+
+            symbol = futures[
+                future
+            ]
+
+            try:
+
+                value = future.result()
+
+                if value:
+
+                    results[
+                        symbol
+                    ] = value
+
+            except Exception as e:
+
+                print(
+                    f"1H Mum Akışı "
+                    f"{symbol}: {e}"
+                )
+
+    return results
+
+
+# =========================================================
+# ANA MUM AKIŞI MOTORU
+#
+# Her coin:
+#
+# 4 Haftalık
+# 7 Günlük
+# 6 x 4H
+# 4 x 1H
+#
+# TOPLAM = 21 KAPANMIŞ MUM
+# =========================================================
+
+def get_mum_akisi_data(
+    coins
+):
+
+    coins_tuple = tuple(
+        coins
+    )
+
+
+    # -----------------------------------------------------
+    # Günlük geçmiş veriyi mevcut cache'den kullan
+    # -----------------------------------------------------
+
+    history_map = (
+        get_history_snapshot(
+            coins_tuple,
+            market_day_key()
+        )
+    )
+
+
+    # -----------------------------------------------------
+    # 4H verisi
+    # -----------------------------------------------------
+
+    h4_map = (
+        get_h4_flow_snapshot(
+            coins_tuple,
+            market_4h_key()
+        )
+    )
+
+
+    # -----------------------------------------------------
+    # 1H verisi
+    # -----------------------------------------------------
+
+    h1_map = (
+        get_h1_flow_snapshot(
+            coins_tuple,
+            market_hour_key()
+        )
+    )
+
+
+    # -----------------------------------------------------
+    # Fiyatlar
+    # Tek API isteği
+    # -----------------------------------------------------
+
+    ticker_map = (
+        get_all_tickers()
+    )
+
+
+    results = []
+
+
+    for symbol in coins:
+
+        history = history_map.get(
+            symbol
+        )
+
+        if not history:
+            continue
+
+
+        completed_daily = (
+            history["daily"]
+        )
+
+
+        # ---------------------------------------------
+        # 4 Haftalık
+        # ---------------------------------------------
+
+        weekly = make_weekly_flow(
+            completed_daily
+        )
+
+
+        # ---------------------------------------------
+        # 7 Günlük
+        # ---------------------------------------------
+
+        daily = make_daily_flow(
+            completed_daily
+        )
+
+
+        # ---------------------------------------------
+        # 6 x 4H
+        # ---------------------------------------------
+
+        h4 = h4_map.get(
+            symbol,
+            []
+        )
+
+
+        # ---------------------------------------------
+        # 4 x 1H
+        # ---------------------------------------------
+
+        h1 = h1_map.get(
+            symbol,
+            []
+        )
+
+
+        # ---------------------------------------------
+        # 21 kutunun tamamı olmalı
+        # ---------------------------------------------
+
+        if len(weekly) != 4:
+            continue
+
+        if len(daily) != 7:
+            continue
+
+        if len(h4) != 6:
+            continue
+
+        if len(h1) != 4:
+            continue
+
+
+        inst_id = history[
+            "inst_id"
+        ]
+
+        price = ticker_map.get(
+            inst_id
+        )
+
+        if price is None:
+            continue
+
+
+        results.append({
+
+            "coin":
+                symbol.replace(
+                    "USDT",
+                    ""
+                ),
+
+            "price":
+                f"{price:.8g}",
+
+            "weekly":
+                weekly,
+
+            "daily":
+                daily,
+
+            "h4":
+                h4,
+
+            "h1":
+                h1
+        })
+
+
+    return results
