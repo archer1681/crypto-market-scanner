@@ -41,38 +41,42 @@ df = pd.DataFrame(data)
 
 
 # =========================================================
-# 16 OHLC SEVİYESİ
+# 12 SEVİYE
 #
-# Gün + Hafta + Ay + Yıl
-# Her biri O/H/L/C = toplam 16 seviye
+# CLOSE YOK
+#
+# Gün O/H/L        = 3
+# Hafta O/H/L      = 3
+# Ay O/H/L         = 3
+# Yıl O/H/L        = 3
+#
+# TOPLAM = 12
 # =========================================================
 
 LEVEL_COLUMNS = [
     "Gün O",
     "Gün H",
     "Gün L",
-    "Gün C",
 
     "Hafta O",
     "Hafta H",
     "Hafta L",
-    "Hafta C",
 
     "Ay O",
     "Ay H",
     "Ay L",
-    "Ay C",
 
     "Yıl O",
     "Yıl H",
-    "Yıl L",
-    "Yıl C"
+    "Yıl L"
 ]
 
 
 def count_above(row):
+    # Eşitlik durumunda seviyenin üst tarafında kabul ediyoruz.
+    # Böylece Üstünde + Altında her zaman 12 olur.
     return sum(
-        row["Fiyat"] > row[col]
+        row["Fiyat"] >= row[col]
         for col in LEVEL_COLUMNS
     )
 
@@ -94,9 +98,14 @@ df["Altında"] = df.apply(
     axis=1
 )
 
+df["12 Seviye"] = (
+    df["Üstünde"].astype(str)
+    + "/12"
+)
+
 
 # =========================================================
-# İLK AÇILIŞTA EN ÇOK YÜKSELENLER ÜSTTE
+# İLK AÇILIŞTA GÜNLÜK EN ÇOK YÜKSELEN ÜSTTE
 # =========================================================
 
 df = df.sort_values(
@@ -163,134 +172,353 @@ st.divider()
 
 
 # =========================================================
-# ANA YATAY TABLO
+# İKİ ANA PANEL
 # =========================================================
 
-DISPLAY_COLUMNS = [
-    "Coin",
-    "Fiyat",
-
-    "Gün %",
-    "Hafta %",
-
-    "Gün Durum",
-
-    "Üstünde",
-    "Altında",
-
-    "Gün Konum %",
-    "Hafta Konum %",
-    "Ay Konum %",
-    "Yıl Konum %",
-
-    "Gün O",
-    "Gün H",
-    "Gün L",
-    "Gün C",
-
-    "Hafta O",
-    "Hafta H",
-    "Hafta L",
-    "Hafta C",
-
-    "Ay O",
-    "Ay H",
-    "Ay L",
-    "Ay C",
-
-    "Yıl O",
-    "Yıl H",
-    "Yıl L",
-    "Yıl C",
-
-    "Gün H Uzaklık %",
-    "Gün L Uzaklık %",
-
-    "Son 5 Gün",
-
-    "Gün Hacim USDT",
-    "14G Ort Hacim",
-    "14G Hacim Fark %"
-]
+tab1, tab2 = st.tabs([
+    "📊 Piyasa Genel Bakış",
+    "🎯 12 Seviye Konumu"
+])
 
 
-table = df[
-    DISPLAY_COLUMNS
-].copy()
+# =========================================================
+# TAB 1
+# PİYASA GENEL BAKIŞ
+# =========================================================
+
+with tab1:
+
+    DISPLAY_COLUMNS = [
+        "Coin",
+        "Fiyat",
+
+        "Gün %",
+        "Hafta %",
+
+        "Gün Durum",
+
+        "12 Seviye",
+        "Üstünde",
+        "Altında",
+
+        "Gün Konum %",
+        "Hafta Konum %",
+        "Ay Konum %",
+        "Yıl Konum %",
+
+        "Gün O",
+        "Gün H",
+        "Gün L",
+        "Gün C",
+
+        "Hafta O",
+        "Hafta H",
+        "Hafta L",
+        "Hafta C",
+
+        "Ay O",
+        "Ay H",
+        "Ay L",
+        "Ay C",
+
+        "Yıl O",
+        "Yıl H",
+        "Yıl L",
+        "Yıl C",
+
+        "Gün H Uzaklık %",
+        "Gün L Uzaklık %",
+
+        "Son 5 Gün",
+
+        "Gün Hacim USDT",
+        "14G Ort Hacim",
+        "14G Hacim Fark %"
+    ]
 
 
-st.dataframe(
-    table,
-    use_container_width=True,
-    hide_index=True,
-    height=760,
+    table = df[
+        DISPLAY_COLUMNS
+    ].copy()
 
-    column_config={
 
-        "Fiyat": st.column_config.NumberColumn(
-            "Fiyat",
-            format="%.8g"
-        ),
+    st.dataframe(
+        table,
+        use_container_width=True,
+        hide_index=True,
+        height=760,
 
-        "Gün %": st.column_config.NumberColumn(
-            "Gün %",
-            format="%.2f%%"
-        ),
+        column_config={
 
-        "Hafta %": st.column_config.NumberColumn(
-            "Hafta %",
-            format="%.2f%%"
-        ),
+            "Fiyat": st.column_config.NumberColumn(
+                "Fiyat",
+                format="%.8g"
+            ),
 
-        "Gün Konum %": st.column_config.NumberColumn(
-            "Gün Konum %",
-            format="%.1f%%"
-        ),
+            "Gün %": st.column_config.NumberColumn(
+                "Gün %",
+                format="%.2f%%"
+            ),
 
-        "Hafta Konum %": st.column_config.NumberColumn(
-            "Hafta Konum %",
-            format="%.1f%%"
-        ),
+            "Hafta %": st.column_config.NumberColumn(
+                "Hafta %",
+                format="%.2f%%"
+            ),
 
-        "Ay Konum %": st.column_config.NumberColumn(
-            "Ay Konum %",
-            format="%.1f%%"
-        ),
+            "Gün Konum %": st.column_config.NumberColumn(
+                "Gün Konum %",
+                format="%.1f%%"
+            ),
 
-        "Yıl Konum %": st.column_config.NumberColumn(
-            "Yıl Konum %",
-            format="%.1f%%"
-        ),
+            "Hafta Konum %": st.column_config.NumberColumn(
+                "Hafta Konum %",
+                format="%.1f%%"
+            ),
 
-        "Gün H Uzaklık %": st.column_config.NumberColumn(
-            "Gün High Uzaklık %",
-            format="%.2f%%"
-        ),
+            "Ay Konum %": st.column_config.NumberColumn(
+                "Ay Konum %",
+                format="%.1f%%"
+            ),
 
-        "Gün L Uzaklık %": st.column_config.NumberColumn(
-            "Gün Low Uzaklık %",
-            format="%.2f%%"
-        ),
+            "Yıl Konum %": st.column_config.NumberColumn(
+                "Yıl Konum %",
+                format="%.1f%%"
+            ),
 
-        "Gün Hacim USDT": st.column_config.NumberColumn(
-            "Gün Hacim",
-            format="%.0f"
-        ),
+            "Gün H Uzaklık %": st.column_config.NumberColumn(
+                "Gün High Uzaklık %",
+                format="%.2f%%"
+            ),
 
-        "14G Ort Hacim": st.column_config.NumberColumn(
-            "14G Ort Hacim",
-            format="%.0f"
-        ),
+            "Gün L Uzaklık %": st.column_config.NumberColumn(
+                "Gün Low Uzaklık %",
+                format="%.2f%%"
+            ),
 
-        "14G Hacim Fark %": st.column_config.NumberColumn(
-            "14G Hacim Fark %",
-            format="%.1f%%"
+            "Gün Hacim USDT": st.column_config.NumberColumn(
+                "Gün Hacim",
+                format="%.0f"
+            ),
+
+            "14G Ort Hacim": st.column_config.NumberColumn(
+                "14G Ort Hacim",
+                format="%.0f"
+            ),
+
+            "14G Hacim Fark %": st.column_config.NumberColumn(
+                "14G Hacim Fark %",
+                format="%.1f%%"
+            )
+        }
+    )
+
+
+    st.caption(
+        "Sütun başlıklarına dokunarak yüksekten düşüğe "
+        "veya düşükten yükseğe sıralayabilirsin."
+    )
+
+
+# =========================================================
+# TAB 2
+# 12 SEVİYE KONUMU
+# =========================================================
+
+with tab2:
+
+    st.subheader("12 Seviye Konumu")
+
+    st.caption(
+        "Günlük + Haftalık + Aylık + Yıllık "
+        "Açılış / En Yüksek / En Düşük seviyeleri"
+    )
+
+
+    # -----------------------------------------------------
+    # FİYATIN SEVİYEYE YÜZDE KONUMU
+    #
+    # Pozitif = fiyat seviyenin üzerinde
+    # Negatif = fiyat seviyenin altında
+    # -----------------------------------------------------
+
+    def level_percent(price, level):
+
+        if level == 0:
+            return 0.0
+
+        return (
+            (price - level)
+            / level
+            * 100
         )
-    }
-)
 
 
-st.caption(
-    "Sütun başlıklarına dokunarak yüksekten düşüğe "
-    "veya düşükten yükseğe sıralayabilirsin."
-)
+    def level_cell(price, level):
+
+        pct = level_percent(
+            price,
+            level
+        )
+
+        sign = "+" if pct >= 0 else ""
+
+        return (
+            f"{level:.8g} "
+            f"({sign}{pct:.2f}%)"
+        )
+
+
+    level_table = pd.DataFrame()
+
+
+    level_table["Coin"] = df["Coin"]
+
+    level_table["Fiyat"] = df["Fiyat"]
+
+
+    # ---------- GÜNLÜK ----------
+
+    level_table["Gün O"] = df.apply(
+        lambda r: level_cell(
+            r["Fiyat"],
+            r["Gün O"]
+        ),
+        axis=1
+    )
+
+    level_table["Gün H"] = df.apply(
+        lambda r: level_cell(
+            r["Fiyat"],
+            r["Gün H"]
+        ),
+        axis=1
+    )
+
+    level_table["Gün L"] = df.apply(
+        lambda r: level_cell(
+            r["Fiyat"],
+            r["Gün L"]
+        ),
+        axis=1
+    )
+
+
+    # ---------- HAFTALIK ----------
+
+    level_table["Hafta O"] = df.apply(
+        lambda r: level_cell(
+            r["Fiyat"],
+            r["Hafta O"]
+        ),
+        axis=1
+    )
+
+    level_table["Hafta H"] = df.apply(
+        lambda r: level_cell(
+            r["Fiyat"],
+            r["Hafta H"]
+        ),
+        axis=1
+    )
+
+    level_table["Hafta L"] = df.apply(
+        lambda r: level_cell(
+            r["Fiyat"],
+            r["Hafta L"]
+        ),
+        axis=1
+    )
+
+
+    # ---------- AYLIK ----------
+
+    level_table["Ay O"] = df.apply(
+        lambda r: level_cell(
+            r["Fiyat"],
+            r["Ay O"]
+        ),
+        axis=1
+    )
+
+    level_table["Ay H"] = df.apply(
+        lambda r: level_cell(
+            r["Fiyat"],
+            r["Ay H"]
+        ),
+        axis=1
+    )
+
+    level_table["Ay L"] = df.apply(
+        lambda r: level_cell(
+            r["Fiyat"],
+            r["Ay L"]
+        ),
+        axis=1
+    )
+
+
+    # ---------- YILLIK ----------
+
+    level_table["Yıl O"] = df.apply(
+        lambda r: level_cell(
+            r["Fiyat"],
+            r["Yıl O"]
+        ),
+        axis=1
+    )
+
+    level_table["Yıl H"] = df.apply(
+        lambda r: level_cell(
+            r["Fiyat"],
+            r["Yıl H"]
+        ),
+        axis=1
+    )
+
+    level_table["Yıl L"] = df.apply(
+        lambda r: level_cell(
+            r["Fiyat"],
+            r["Yıl L"]
+        ),
+        axis=1
+    )
+
+
+    level_table["Üstünde"] = df["Üstünde"]
+
+    level_table["Altında"] = df["Altında"]
+
+    level_table["Konum"] = df["12 Seviye"]
+
+
+    st.dataframe(
+        level_table,
+        use_container_width=True,
+        hide_index=True,
+        height=760,
+
+        column_config={
+
+            "Fiyat": st.column_config.NumberColumn(
+                "Fiyat",
+                format="%.8g"
+            ),
+
+            "Üstünde": st.column_config.NumberColumn(
+                "Üstünde",
+                format="%d"
+            ),
+
+            "Altında": st.column_config.NumberColumn(
+                "Altında",
+                format="%d"
+            )
+        }
+    )
+
+
+    st.caption(
+        "Pozitif yüzde: fiyat seviyenin üzerinde. "
+        "Negatif yüzde: fiyat seviyenin altında. "
+        "Close değerleri 12 seviye hesabına dahil değildir."
+    )
