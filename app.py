@@ -45,12 +45,12 @@ df = pd.DataFrame(data)
 #
 # CLOSE YOK
 #
-# Gün O/H/L        = 3
-# Hafta O/H/L      = 3
-# Ay O/H/L         = 3
-# Yıl O/H/L        = 3
+# Gün O/H/L
+# Hafta O/H/L
+# Ay O/H/L
+# Yıl O/H/L
 #
-# TOPLAM = 12
+# Toplam = 12
 # =========================================================
 
 LEVEL_COLUMNS = [
@@ -73,10 +73,8 @@ LEVEL_COLUMNS = [
 
 
 def count_above(row):
-    # Eşitlik durumunda seviyenin üst tarafında kabul ediyoruz.
-    # Böylece Üstünde + Altında her zaman 12 olur.
     return sum(
-        row["Fiyat"] >= row[col]
+        row["Fiyat"] > row[col]
         for col in LEVEL_COLUMNS
     )
 
@@ -98,14 +96,9 @@ df["Altında"] = df.apply(
     axis=1
 )
 
-df["12 Seviye"] = (
-    df["Üstünde"].astype(str)
-    + "/12"
-)
-
 
 # =========================================================
-# İLK AÇILIŞTA GÜNLÜK EN ÇOK YÜKSELEN ÜSTTE
+# İLK AÇILIŞTA EN ÇOK YÜKSELENLER ÜSTTE
 # =========================================================
 
 df = df.sort_values(
@@ -172,7 +165,7 @@ st.divider()
 
 
 # =========================================================
-# İKİ ANA PANEL
+# SEKME YAPISI
 # =========================================================
 
 tab1, tab2 = st.tabs([
@@ -182,7 +175,7 @@ tab1, tab2 = st.tabs([
 
 
 # =========================================================
-# TAB 1
+# SEKME 1
 # PİYASA GENEL BAKIŞ
 # =========================================================
 
@@ -197,7 +190,6 @@ with tab1:
 
         "Gün Durum",
 
-        "12 Seviye",
         "Üstünde",
         "Altında",
 
@@ -320,7 +312,7 @@ with tab1:
 
 
 # =========================================================
-# TAB 2
+# SEKME 2
 # 12 SEVİYE KONUMU
 # =========================================================
 
@@ -335,10 +327,21 @@ with tab2:
 
 
     # -----------------------------------------------------
-    # FİYATIN SEVİYEYE YÜZDE KONUMU
+    # FİYAT FORMAT
+    # -----------------------------------------------------
+
+    def fmt_price(value):
+        try:
+            return f"{float(value):.8g}"
+        except:
+            return str(value)
+
+
+    # -----------------------------------------------------
+    # SEVİYEYE GÖRE YÜZDE
     #
-    # Pozitif = fiyat seviyenin üzerinde
-    # Negatif = fiyat seviyenin altında
+    # + = fiyat seviyenin üzerinde
+    # - = fiyat seviyenin altında
     # -----------------------------------------------------
 
     def level_percent(price, level):
@@ -353,6 +356,13 @@ with tab2:
         )
 
 
+    # -----------------------------------------------------
+    # TEK HÜCRE
+    #
+    # Fiyat üstte
+    # Yüzde altta
+    # -----------------------------------------------------
+
     def level_cell(price, level):
 
         pct = level_percent(
@@ -360,165 +370,289 @@ with tab2:
             level
         )
 
-        sign = "+" if pct >= 0 else ""
+        if pct > 0:
+            color = "#16c784"
+            sign = "+"
 
-        return (
-            f"{level:.8g} "
-            f"({sign}{pct:.2f}%)"
+        elif pct < 0:
+            color = "#ea3943"
+            sign = ""
+
+        else:
+            color = "#8b949e"
+            sign = ""
+
+        return f"""
+        <div class="level-cell">
+            <div class="level-price">
+                {fmt_price(level)}
+            </div>
+            <div
+                class="level-pct"
+                style="color:{color};"
+            >
+                {sign}{pct:.2f}%
+            </div>
+        </div>
+        """
+
+
+    # -----------------------------------------------------
+    # CSS
+    #
+    # Amaç:
+    # 12 seviyeyi mümkün olduğunca tek ekrana sığdırmak
+    # -----------------------------------------------------
+
+    st.markdown(
+        """
+        <style>
+
+        .ohlc-wrap {
+            width: 100%;
+            overflow-x: auto;
+        }
+
+        .ohlc-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+            font-size: 11px;
+        }
+
+        .ohlc-table th {
+            background: #f4f6f8;
+            border: 1px solid #dfe3e8;
+            padding: 5px 2px;
+            text-align: center;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .ohlc-table td {
+            border: 1px solid #e5e7eb;
+            padding: 3px 2px;
+            text-align: center;
+            vertical-align: middle;
+        }
+
+        .coin-cell {
+            font-weight: 700;
+            white-space: nowrap;
+            width: 55px;
+        }
+
+        .current-price {
+            font-weight: 700;
+            white-space: nowrap;
+            width: 60px;
+        }
+
+        .level-cell {
+            line-height: 1.05;
+            min-width: 50px;
+        }
+
+        .level-price {
+            font-size: 10px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .level-pct {
+            margin-top: 3px;
+            font-size: 9px;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .count-up {
+            font-size: 13px;
+            font-weight: 800;
+            color: #16c784;
+        }
+
+        .count-down {
+            font-size: 13px;
+            font-weight: 800;
+            color: #ea3943;
+        }
+
+        .period-head {
+            font-size: 11px;
+            font-weight: 800;
+        }
+
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+    # -----------------------------------------------------
+    # TABLO HTML
+    # -----------------------------------------------------
+
+    html = """
+    <div class="ohlc-wrap">
+
+    <table class="ohlc-table">
+
+    <thead>
+
+        <tr>
+
+            <th rowspan="2">
+                Coin
+            </th>
+
+            <th rowspan="2">
+                Fiyat
+            </th>
+
+            <th colspan="3">
+                Günlük
+            </th>
+
+            <th colspan="3">
+                Haftalık
+            </th>
+
+            <th colspan="3">
+                Aylık
+            </th>
+
+            <th colspan="3">
+                Yıllık
+            </th>
+
+            <th rowspan="2">
+                Üstü
+            </th>
+
+            <th rowspan="2">
+                Altı
+            </th>
+
+        </tr>
+
+        <tr>
+
+            <th>O</th>
+            <th>H</th>
+            <th>L</th>
+
+            <th>O</th>
+            <th>H</th>
+            <th>L</th>
+
+            <th>O</th>
+            <th>H</th>
+            <th>L</th>
+
+            <th>O</th>
+            <th>H</th>
+            <th>L</th>
+
+        </tr>
+
+    </thead>
+
+    <tbody>
+    """
+
+
+    for _, row in df.iterrows():
+
+        price = float(
+            row["Fiyat"]
         )
 
+        html += f"""
+        <tr>
 
-    level_table = pd.DataFrame()
+            <td class="coin-cell">
+                {row["Coin"]}
+            </td>
 
+            <td class="current-price">
+                {fmt_price(price)}
+            </td>
 
-    level_table["Coin"] = df["Coin"]
+            <td>
+                {level_cell(price, row["Gün O"])}
+            </td>
 
-    level_table["Fiyat"] = df["Fiyat"]
+            <td>
+                {level_cell(price, row["Gün H"])}
+            </td>
 
+            <td>
+                {level_cell(price, row["Gün L"])}
+            </td>
 
-    # ---------- GÜNLÜK ----------
+            <td>
+                {level_cell(price, row["Hafta O"])}
+            </td>
 
-    level_table["Gün O"] = df.apply(
-        lambda r: level_cell(
-            r["Fiyat"],
-            r["Gün O"]
-        ),
-        axis=1
-    )
+            <td>
+                {level_cell(price, row["Hafta H"])}
+            </td>
 
-    level_table["Gün H"] = df.apply(
-        lambda r: level_cell(
-            r["Fiyat"],
-            r["Gün H"]
-        ),
-        axis=1
-    )
+            <td>
+                {level_cell(price, row["Hafta L"])}
+            </td>
 
-    level_table["Gün L"] = df.apply(
-        lambda r: level_cell(
-            r["Fiyat"],
-            r["Gün L"]
-        ),
-        axis=1
-    )
+            <td>
+                {level_cell(price, row["Ay O"])}
+            </td>
 
+            <td>
+                {level_cell(price, row["Ay H"])}
+            </td>
 
-    # ---------- HAFTALIK ----------
+            <td>
+                {level_cell(price, row["Ay L"])}
+            </td>
 
-    level_table["Hafta O"] = df.apply(
-        lambda r: level_cell(
-            r["Fiyat"],
-            r["Hafta O"]
-        ),
-        axis=1
-    )
+            <td>
+                {level_cell(price, row["Yıl O"])}
+            </td>
 
-    level_table["Hafta H"] = df.apply(
-        lambda r: level_cell(
-            r["Fiyat"],
-            r["Hafta H"]
-        ),
-        axis=1
-    )
+            <td>
+                {level_cell(price, row["Yıl H"])}
+            </td>
 
-    level_table["Hafta L"] = df.apply(
-        lambda r: level_cell(
-            r["Fiyat"],
-            r["Hafta L"]
-        ),
-        axis=1
-    )
+            <td>
+                {level_cell(price, row["Yıl L"])}
+            </td>
 
+            <td class="count-up">
+                {int(row["Üstünde"])}/12
+            </td>
 
-    # ---------- AYLIK ----------
+            <td class="count-down">
+                {int(row["Altında"])}/12
+            </td>
 
-    level_table["Ay O"] = df.apply(
-        lambda r: level_cell(
-            r["Fiyat"],
-            r["Ay O"]
-        ),
-        axis=1
-    )
-
-    level_table["Ay H"] = df.apply(
-        lambda r: level_cell(
-            r["Fiyat"],
-            r["Ay H"]
-        ),
-        axis=1
-    )
-
-    level_table["Ay L"] = df.apply(
-        lambda r: level_cell(
-            r["Fiyat"],
-            r["Ay L"]
-        ),
-        axis=1
-    )
+        </tr>
+        """
 
 
-    # ---------- YILLIK ----------
-
-    level_table["Yıl O"] = df.apply(
-        lambda r: level_cell(
-            r["Fiyat"],
-            r["Yıl O"]
-        ),
-        axis=1
-    )
-
-    level_table["Yıl H"] = df.apply(
-        lambda r: level_cell(
-            r["Fiyat"],
-            r["Yıl H"]
-        ),
-        axis=1
-    )
-
-    level_table["Yıl L"] = df.apply(
-        lambda r: level_cell(
-            r["Fiyat"],
-            r["Yıl L"]
-        ),
-        axis=1
-    )
+    html += """
+    </tbody>
+    </table>
+    </div>
+    """
 
 
-    level_table["Üstünde"] = df["Üstünde"]
-
-    level_table["Altında"] = df["Altında"]
-
-    level_table["Konum"] = df["12 Seviye"]
-
-
-    st.dataframe(
-        level_table,
-        use_container_width=True,
-        hide_index=True,
-        height=760,
-
-        column_config={
-
-            "Fiyat": st.column_config.NumberColumn(
-                "Fiyat",
-                format="%.8g"
-            ),
-
-            "Üstünde": st.column_config.NumberColumn(
-                "Üstünde",
-                format="%d"
-            ),
-
-            "Altında": st.column_config.NumberColumn(
-                "Altında",
-                format="%d"
-            )
-        }
+    st.markdown(
+        html,
+        unsafe_allow_html=True
     )
 
 
     st.caption(
-        "Pozitif yüzde: fiyat seviyenin üzerinde. "
-        "Negatif yüzde: fiyat seviyenin altında. "
-        "Close değerleri 12 seviye hesabına dahil değildir."
+        "Yeşil yüzde: fiyat seviyenin üzerinde • "
+        "Kırmızı yüzde: fiyat seviyenin altında"
     )
