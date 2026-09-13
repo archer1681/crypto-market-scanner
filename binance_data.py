@@ -104,23 +104,54 @@ def get_candles(inst_id, bar, limit):
         except Exception:
             continue
 
-    candles.sort(key=lambda x: x["ts"])
+    candles.sort(
+        key=lambda x: x["ts"]
+    )
 
     return candles
 
 
 # =========================================================
 # TÜRKİYE 03:00 = YENİ KRİPTO GÜNÜ
-#
-# Bu anahtar yalnızca 03:00'te değişir.
-# Geçmiş veri önbelleğinin yenilenmesini sağlar.
 # =========================================================
 
 def market_day_key():
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(
+        timezone.utc
+    )
 
-    # Türkiye 03:00 = UTC 00:00
     return now_utc.date().isoformat()
+
+
+# =========================================================
+# SAATLİK CACHE ANAHTARI
+# =========================================================
+
+def market_hour_key():
+    now = datetime.now(
+        timezone.utc
+    )
+
+    return now.strftime(
+        "%Y-%m-%d-%H"
+    )
+
+
+# =========================================================
+# 4 SAATLİK CACHE ANAHTARI
+# =========================================================
+
+def market_4h_key():
+    now = datetime.now(
+        timezone.utc
+    )
+
+    block = now.hour // 4
+
+    return (
+        f"{now.date().isoformat()}-"
+        f"{block}"
+    )
 
 
 # =========================================================
@@ -138,7 +169,10 @@ def candle_datetime(candle):
 # OHLC BİRLEŞTİRME
 # =========================================================
 
-def combine_ohlc(candles, current_price=None):
+def combine_ohlc(
+    candles,
+    current_price=None
+):
     if not candles:
         return None
 
@@ -149,8 +183,14 @@ def combine_ohlc(candles, current_price=None):
 
     result = {
         "open": candles[0]["open"],
-        "high": max(x["high"] for x in candles),
-        "low": min(x["low"] for x in candles),
+        "high": max(
+            x["high"]
+            for x in candles
+        ),
+        "low": min(
+            x["low"]
+            for x in candles
+        ),
         "close": candles[-1]["close"]
     }
 
@@ -162,13 +202,12 @@ def combine_ohlc(candles, current_price=None):
 
 # =========================================================
 # DEĞİŞMEYEN GEÇMİŞ VERİ
-#
-# Bir coin için bu bölüm aynı kripto günü içerisinde
-# yalnızca 1 kez indirilir.
 # =========================================================
 
 def build_coin_history(symbol):
-    inst_id = to_okx_symbol(symbol)
+    inst_id = to_okx_symbol(
+        symbol
+    )
 
     if not inst_id:
         return None
@@ -185,33 +224,45 @@ def build_coin_history(symbol):
         12
     )
 
-    # Sadece kapanmış mumlar
     completed_daily = [
-        c for c in daily
+        c
+        for c in daily
         if c["confirm"] == "1"
     ]
 
     completed_monthly = [
-        c for c in monthly
+        c
+        for c in monthly
         if c["confirm"] == "1"
     ]
 
-    if len(completed_daily) < 14:
+    if len(
+        completed_daily
+    ) < 14:
         return None
 
-    # Son 5 tamamlanmış günlük mum
-    last_5 = completed_daily[-5:]
+    last_5 = (
+        completed_daily[-5:]
+    )
 
     colors = "".join(
-        "🟢" if c["close"] >= c["open"] else "🔴"
+        (
+            "🟢"
+            if c["close"] >= c["open"]
+            else "🔴"
+        )
         for c in last_5
     )
 
-    # Son 14 tamamlanmış gün hacim ortalaması
-    last_14 = completed_daily[-14:]
+    last_14 = (
+        completed_daily[-14:]
+    )
 
     avg_14_volume = (
-        sum(c["volume"] for c in last_14)
+        sum(
+            c["volume"]
+            for c in last_14
+        )
         / len(last_14)
     )
 
@@ -226,12 +277,13 @@ def build_coin_history(symbol):
 
 # =========================================================
 # GÜNLÜK GEÇMİŞ CACHE
-#
-# day_key değişmediği sürece tekrar çalışmaz.
 # =========================================================
 
 @lru_cache(maxsize=8)
-def get_history_snapshot(coins_tuple, day_key):
+def get_history_snapshot(
+    coins_tuple,
+    day_key
+):
     results = {}
 
     with ThreadPoolExecutor(
@@ -243,22 +295,30 @@ def get_history_snapshot(coins_tuple, day_key):
                 build_coin_history,
                 symbol
             ): symbol
-
             for symbol in coins_tuple
         }
 
-        for future in as_completed(futures):
-            symbol = futures[future]
+        for future in as_completed(
+            futures
+        ):
+            symbol = futures[
+                future
+            ]
 
             try:
-                result = future.result()
+                result = (
+                    future.result()
+                )
 
                 if result:
-                    results[symbol] = result
+                    results[
+                        symbol
+                    ] = result
 
             except Exception as e:
                 print(
-                    f"Geçmiş veri {symbol}: {e}"
+                    f"Geçmiş veri "
+                    f"{symbol}: {e}"
                 )
 
     return results
@@ -266,8 +326,6 @@ def get_history_snapshot(coins_tuple, day_key):
 
 # =========================================================
 # BUGÜNKÜ CANLI MUM
-#
-# Gün içinde değişen esas OHLC bilgisi budur.
 # =========================================================
 
 def get_live_day(inst_id):
@@ -287,7 +345,10 @@ def get_live_day(inst_id):
 # YÜZDE HESAPLARI
 # =========================================================
 
-def change_percent(price, base):
+def change_percent(
+    price,
+    base
+):
     if not base:
         return 0.0
 
@@ -298,7 +359,11 @@ def change_percent(price, base):
     )
 
 
-def location_percent(price, high, low):
+def location_percent(
+    price,
+    high,
+    low
+):
     if high == low:
         return 50.0
 
@@ -310,16 +375,24 @@ def location_percent(price, high, low):
 
     return max(
         0.0,
-        min(100.0, value)
+        min(
+            100.0,
+            value
+        )
     )
 
 
-def distance_percent(price, level):
+def distance_percent(
+    price,
+    level
+):
     if not price:
         return 0.0
 
     return (
-        abs(level - price)
+        abs(
+            level - price
+        )
         / price
         * 100
     )
@@ -336,13 +409,23 @@ def calculate_coin(
     price
 ):
 
-    if not history or not live_day:
+    if (
+        not history
+        or not live_day
+    ):
         return None
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(
+        timezone.utc
+    )
 
-    completed_daily = history["daily"]
-    completed_monthly = history["monthly"]
+    completed_daily = (
+        history["daily"]
+    )
+
+    completed_monthly = (
+        history["monthly"]
+    )
 
 
     # -----------------------------------------------------
@@ -361,21 +444,32 @@ def calculate_coin(
     # HAFTA
     # -----------------------------------------------------
 
-    now_iso = now.isocalendar()
+    now_iso = (
+        now.isocalendar()
+    )
 
     week_candles = []
 
     for candle in completed_daily:
-        dt = candle_datetime(candle)
+        dt = candle_datetime(
+            candle
+        )
+
         iso = dt.isocalendar()
 
         if (
-            iso.year == now_iso.year
-            and iso.week == now_iso.week
+            iso.year
+            == now_iso.year
+            and iso.week
+            == now_iso.week
         ):
-            week_candles.append(candle)
+            week_candles.append(
+                candle
+            )
 
-    week_candles.append(live_day)
+    week_candles.append(
+        live_day
+    )
 
     week = combine_ohlc(
         week_candles,
@@ -390,15 +484,23 @@ def calculate_coin(
     month_candles = []
 
     for candle in completed_daily:
-        dt = candle_datetime(candle)
+        dt = candle_datetime(
+            candle
+        )
 
         if (
-            dt.year == now.year
-            and dt.month == now.month
+            dt.year
+            == now.year
+            and dt.month
+            == now.month
         ):
-            month_candles.append(candle)
+            month_candles.append(
+                candle
+            )
 
-    month_candles.append(live_day)
+    month_candles.append(
+        live_day
+    )
 
     month = combine_ohlc(
         month_candles,
@@ -408,20 +510,23 @@ def calculate_coin(
 
     # -----------------------------------------------------
     # YIL
-    #
-    # Önce tamamlanmış aylık mumlar,
-    # sonra mevcut ayın canlı OHLC'si.
     # -----------------------------------------------------
 
     year_parts = []
 
     for candle in completed_monthly:
-        dt = candle_datetime(candle)
+        dt = candle_datetime(
+            candle
+        )
 
-        if dt.year == now.year:
-            year_parts.append(candle)
+        if (
+            dt.year
+            == now.year
+        ):
+            year_parts.append(
+                candle
+            )
 
-    # Mevcut ayı sentetik mum olarak ekle
     current_month_candle = {
         "ts": live_day["ts"],
         "open": month["open"],
@@ -446,18 +551,25 @@ def calculate_coin(
     # HACİM
     # -----------------------------------------------------
 
-    today_volume = live_day["volume"]
+    today_volume = (
+        live_day["volume"]
+    )
 
     avg_14_volume = history[
         "avg_14_volume"
     ]
 
     if avg_14_volume > 0:
+
         volume_vs_14 = (
-            (today_volume - avg_14_volume)
+            (
+                today_volume
+                - avg_14_volume
+            )
             / avg_14_volume
             * 100
         )
+
     else:
         volume_vs_14 = 0.0
 
@@ -491,7 +603,6 @@ def calculate_coin(
             else "ALTI"
         ),
 
-        # GÜN
         "Gün O": day["open"],
         "Gün H": day["high"],
         "Gün L": day["low"],
@@ -503,64 +614,65 @@ def calculate_coin(
             day["low"]
         ),
 
-        # HAFTA
         "Hafta O": week["open"],
         "Hafta H": week["high"],
         "Hafta L": week["low"],
         "Hafta C": price,
 
-        "Hafta Konum %": location_percent(
-            price,
-            week["high"],
-            week["low"]
-        ),
+        "Hafta Konum %":
+            location_percent(
+                price,
+                week["high"],
+                week["low"]
+            ),
 
-        # AY
         "Ay O": month["open"],
         "Ay H": month["high"],
         "Ay L": month["low"],
         "Ay C": price,
 
-        "Ay Konum %": location_percent(
-            price,
-            month["high"],
-            month["low"]
-        ),
+        "Ay Konum %":
+            location_percent(
+                price,
+                month["high"],
+                month["low"]
+            ),
 
-        # YIL
         "Yıl O": year["open"],
         "Yıl H": year["high"],
         "Yıl L": year["low"],
         "Yıl C": price,
 
-        "Yıl Konum %": location_percent(
-            price,
-            year["high"],
-            year["low"]
-        ),
+        "Yıl Konum %":
+            location_percent(
+                price,
+                year["high"],
+                year["low"]
+            ),
 
-        # UZAKLIK
-        "Gün H Uzaklık %": distance_percent(
-            price,
-            day["high"]
-        ),
+        "Gün H Uzaklık %":
+            distance_percent(
+                price,
+                day["high"]
+            ),
 
-        "Gün L Uzaklık %": distance_percent(
-            price,
-            day["low"]
-        ),
+        "Gün L Uzaklık %":
+            distance_percent(
+                price,
+                day["low"]
+            ),
 
-        # SON 5 KAPANMIŞ MUM
-        "Son 5 Gün": history[
-            "last_5"
-        ],
+        "Son 5 Gün":
+            history["last_5"],
 
-        # HACİM
-        "Gün Hacim USDT": today_volume,
+        "Gün Hacim USDT":
+            today_volume,
 
-        "14G Ort Hacim": avg_14_volume,
+        "14G Ort Hacim":
+            avg_14_volume,
 
-        "14G Hacim Fark %": volume_vs_14
+        "14G Hacim Fark %":
+            volume_vs_14
     }
 
 
@@ -570,28 +682,33 @@ def calculate_coin(
 
 def get_scanner_data(coins):
 
-    coins_tuple = tuple(coins)
-
-    # 03:00'te değişen günlük cache anahtarı
-    day_key = market_day_key()
-
-    # Geçmiş veri aynı gün içinde cache'den gelir.
-    history_map = get_history_snapshot(
-        coins_tuple,
-        day_key
+    coins_tuple = tuple(
+        coins
     )
 
-    # Bütün anlık fiyatlar yalnızca 1 API isteği
-    ticker_map = get_all_tickers()
+    day_key = (
+        market_day_key()
+    )
+
+    history_map = (
+        get_history_snapshot(
+            coins_tuple,
+            day_key
+        )
+    )
+
+    ticker_map = (
+        get_all_tickers()
+    )
 
     results = []
 
-
-    # -----------------------------------------------------
-    # Sadece bugünkü günlük mumları yenile
-    # -----------------------------------------------------
-
     live_days = {}
+
+
+    # -----------------------------------------------------
+    # BUGÜNKÜ GÜNLÜK MUMLAR
+    # -----------------------------------------------------
 
     with ThreadPoolExecutor(
         max_workers=4
@@ -601,8 +718,10 @@ def get_scanner_data(coins):
 
         for symbol in coins:
 
-            history = history_map.get(
-                symbol
+            history = (
+                history_map.get(
+                    symbol
+                )
             )
 
             if not history:
@@ -612,8 +731,10 @@ def get_scanner_data(coins):
                 "inst_id"
             ]
 
-            # OKX'te hâlâ mevcut mu?
-            if inst_id not in ticker_map:
+            if (
+                inst_id
+                not in ticker_map
+            ):
                 continue
 
             futures[
@@ -628,10 +749,14 @@ def get_scanner_data(coins):
             futures
         ):
 
-            symbol = futures[future]
+            symbol = futures[
+                future
+            ]
 
             try:
-                live_day = future.result()
+                live_day = (
+                    future.result()
+                )
 
                 if live_day:
                     live_days[
@@ -640,25 +765,33 @@ def get_scanner_data(coins):
 
             except Exception as e:
                 print(
-                    f"Canlı mum {symbol}: {e}"
+                    f"Canlı mum "
+                    f"{symbol}: {e}"
                 )
 
 
     # -----------------------------------------------------
-    # API YOK: sadece yerel hesaplama
+    # YEREL HESAPLAMA
     # -----------------------------------------------------
 
     for symbol in coins:
 
-        history = history_map.get(
-            symbol
+        history = (
+            history_map.get(
+                symbol
+            )
         )
 
-        live_day = live_days.get(
-            symbol
+        live_day = (
+            live_days.get(
+                symbol
+            )
         )
 
-        if not history or not live_day:
+        if (
+            not history
+            or not live_day
+        ):
             continue
 
         inst_id = history[
@@ -680,6 +813,216 @@ def get_scanner_data(coins):
         )
 
         if result:
-            results.append(result)
+            results.append(
+                result
+            )
 
     return results
+
+
+# =========================================================
+# =========================================================
+# MUM AKIŞI / TREND YAPISI MOTORU
+# =========================================================
+# =========================================================
+
+
+# =========================================================
+# MUM YÖNÜ
+#
+# Yaklaşık %0.05 ve daha küçük gövdeler DOJI
+# =========================================================
+
+DOJI_LIMIT_PERCENT = 0.05
+
+
+def candle_direction(candle):
+
+    open_price = candle[
+        "open"
+    ]
+
+    close_price = candle[
+        "close"
+    ]
+
+    if not open_price:
+        return "doji"
+
+    body_percent = (
+        abs(
+            close_price
+            - open_price
+        )
+        / open_price
+        * 100
+    )
+
+    if (
+        body_percent
+        <= DOJI_LIMIT_PERCENT
+    ):
+        return "doji"
+
+    if (
+        close_price
+        > open_price
+    ):
+        return "up"
+
+    return "down"
+
+
+# =========================================================
+# HAFTA ANAHTARI
+# =========================================================
+
+def week_key(candle):
+
+    dt = candle_datetime(
+        candle
+    )
+
+    iso = dt.isocalendar()
+
+    return (
+        iso.year,
+        iso.week
+    )
+
+
+# =========================================================
+# AY ANAHTARI
+# =========================================================
+
+def month_key(candle):
+
+    dt = candle_datetime(
+        candle
+    )
+
+    return (
+        dt.year,
+        dt.month
+    )
+
+
+# =========================================================
+# GÜNLÜK MUMLARDAN HAFTALIK MUM ÜRET
+#
+# Yalnızca tamamlanmış haftalar.
+# =========================================================
+
+def build_completed_weeks(
+    completed_daily
+):
+
+    groups = {}
+
+    for candle in completed_daily:
+
+        key = week_key(
+            candle
+        )
+
+        groups.setdefault(
+            key,
+            []
+        ).append(
+            candle
+        )
+
+
+    now = datetime.now(
+        timezone.utc
+    )
+
+    current_iso = (
+        now.isocalendar()
+    )
+
+    current_key = (
+        current_iso.year,
+        current_iso.week
+    )
+
+
+    weeks = []
+
+    for key in sorted(
+        groups.keys()
+    ):
+
+        # Devam eden hafta kullanılmaz
+        if key == current_key:
+            continue
+
+        candles = sorted(
+            groups[key],
+            key=lambda x: x["ts"]
+        )
+
+        if not candles:
+            continue
+
+        weeks.append({
+            "ts": candles[0]["ts"],
+
+            "open":
+                candles[0]["open"],
+
+            "high":
+                max(
+                    c["high"]
+                    for c in candles
+                ),
+
+            "low":
+                min(
+                    c["low"]
+                    for c in candles
+                ),
+
+            "close":
+                candles[-1]["close"],
+
+            # Hangi ayda kapandı?
+            "close_ts":
+                candles[-1]["ts"]
+        })
+
+
+    return weeks
+
+
+# =========================================================
+# AYLIK AÇILIŞ HARİTASI
+#
+# Günlük mumlardan oluşturulur.
+# Böylece son haftaların ilgili ay açılışı bulunur.
+# =========================================================
+
+def build_month_open_map(
+    completed_daily
+):
+
+    result = {}
+
+    candles = sorted(
+        completed_daily,
+        key=lambda x: x["ts"]
+    )
+
+    for candle in candles:
+
+        key = month_key(
+            candle
+        )
+
+        if key not in result:
+
+            result[key] = (
+                candle["open"]
+            )
+
+   
