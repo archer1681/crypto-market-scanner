@@ -4,7 +4,16 @@ import streamlit.components.v1 as components
 import pandas as pd
 
 from coins import COINS
-from binance_data import get_scanner_data
+import binance_data
+
+get_scanner_data = binance_data.get_scanner_data
+
+# Mum Akışı motorunu binance_data.py'ye bir sonraki adımda ekleyeceğiz.
+get_mum_akisi_data = getattr(
+    binance_data,
+    "get_mum_akisi_data",
+    None
+)
 
 
 st.set_page_config(
@@ -13,11 +22,13 @@ st.set_page_config(
 )
 
 st.title("Kripto Piyasa Tarayıcısı")
-st.caption("OKX USDT Perpetual • Gün / Hafta / Ay / Yıl Konum Paneli")
+st.caption(
+    "OKX USDT Perpetual • Gün / Hafta / Ay / Yıl Konum Paneli"
+)
 
 
 # =========================================================
-# VERİ
+# ANA VERİ
 # =========================================================
 
 @st.cache_data(ttl=60)
@@ -50,8 +61,6 @@ df = pd.DataFrame(data)
 # Hafta O/H/L
 # Ay O/H/L
 # Yıl O/H/L
-#
-# Toplam = 12
 # =========================================================
 
 LEVEL_COLUMNS = [
@@ -169,9 +178,10 @@ st.divider()
 # SEKME YAPISI
 # =========================================================
 
-tab1, tab2 = st.tabs([
+tab1, tab2, tab3 = st.tabs([
     "📊 Piyasa Genel Bakış",
-    "🎯 12 Seviye Konumu"
+    "🎯 12 Seviye Konumu",
+    "🟩 Mum Akışı / Trend Yapısı"
 ])
 
 
@@ -327,10 +337,6 @@ with tab2:
     )
 
 
-    # -----------------------------------------------------
-    # FORMATLAR
-    # -----------------------------------------------------
-
     def fmt_price(value):
         try:
             return f"{float(value):.8g}"
@@ -374,6 +380,7 @@ with tab2:
             <div class="level-price">
                 {fmt_price(level)}
             </div>
+
             <div
                 class="level-pct"
                 style="color:{color};"
@@ -384,14 +391,12 @@ with tab2:
         """
 
 
-    # -----------------------------------------------------
-    # HTML + CSS
-    # -----------------------------------------------------
-
     html = """
     <!DOCTYPE html>
     <html>
+
     <head>
+
     <meta charset="utf-8">
 
     <style>
@@ -565,53 +570,21 @@ with tab2:
                 {fmt_price(price)}
             </td>
 
-            <td>
-                {level_cell(price, row["Gün O"])}
-            </td>
+            <td>{level_cell(price, row["Gün O"])}</td>
+            <td>{level_cell(price, row["Gün H"])}</td>
+            <td>{level_cell(price, row["Gün L"])}</td>
 
-            <td>
-                {level_cell(price, row["Gün H"])}
-            </td>
+            <td>{level_cell(price, row["Hafta O"])}</td>
+            <td>{level_cell(price, row["Hafta H"])}</td>
+            <td>{level_cell(price, row["Hafta L"])}</td>
 
-            <td>
-                {level_cell(price, row["Gün L"])}
-            </td>
+            <td>{level_cell(price, row["Ay O"])}</td>
+            <td>{level_cell(price, row["Ay H"])}</td>
+            <td>{level_cell(price, row["Ay L"])}</td>
 
-            <td>
-                {level_cell(price, row["Hafta O"])}
-            </td>
-
-            <td>
-                {level_cell(price, row["Hafta H"])}
-            </td>
-
-            <td>
-                {level_cell(price, row["Hafta L"])}
-            </td>
-
-            <td>
-                {level_cell(price, row["Ay O"])}
-            </td>
-
-            <td>
-                {level_cell(price, row["Ay H"])}
-            </td>
-
-            <td>
-                {level_cell(price, row["Ay L"])}
-            </td>
-
-            <td>
-                {level_cell(price, row["Yıl O"])}
-            </td>
-
-            <td>
-                {level_cell(price, row["Yıl H"])}
-            </td>
-
-            <td>
-                {level_cell(price, row["Yıl L"])}
-            </td>
+            <td>{level_cell(price, row["Yıl O"])}</td>
+            <td>{level_cell(price, row["Yıl H"])}</td>
+            <td>{level_cell(price, row["Yıl L"])}</td>
 
             <td class="count-up">
                 {int(row["Üstünde"])}/12
@@ -633,6 +606,7 @@ with tab2:
     </div>
 
     </body>
+
     </html>
     """
 
@@ -648,3 +622,485 @@ with tab2:
         "Yeşil yüzde: fiyat seviyenin üzerinde • "
         "Kırmızı yüzde: fiyat seviyenin altında"
     )
+
+
+# =========================================================
+# SEKME 3
+# MUM AKIŞI / TREND YAPISI
+# =========================================================
+
+with tab3:
+
+    st.subheader(
+        "Mum Akışı / Trend Yapısı"
+    )
+
+    st.caption(
+        "Her coin için 21 kapanmış mum: "
+        "4 Haftalık + 7 Günlük + 6×4H + 4×1H"
+    )
+
+
+    # -----------------------------------------------------
+    # BINANCE_DATA MOTORU HENÜZ EKLENMEDİYSE
+    # -----------------------------------------------------
+
+    if get_mum_akisi_data is None:
+
+        st.info(
+            "Mum Akışı veri motoru henüz eklenmedi. "
+            "Bir sonraki adımda binance_data.py güncellenecek."
+        )
+
+    else:
+
+        @st.cache_data(ttl=60)
+        def load_mum_akisi():
+            return get_mum_akisi_data(
+                COINS
+            )
+
+
+        with st.spinner(
+            "Mum akışı verileri hazırlanıyor..."
+        ):
+            flow_data = load_mum_akisi()
+
+
+        if not flow_data:
+
+            st.warning(
+                "Mum Akışı verisi alınamadı."
+            )
+
+        else:
+
+            # =================================================
+            # KUTU ÜRETİMİ
+            # =================================================
+
+            def candle_box(
+                candle,
+                parent_type=None
+            ):
+
+                direction = candle.get(
+                    "direction",
+                    "doji"
+                )
+
+                below_parent = candle.get(
+                    "below_parent_open",
+                    False
+                )
+
+
+                # ---------------------------------------------
+                # MUM RENGİ
+                # ---------------------------------------------
+
+                if direction == "up":
+
+                    candle_color = "#00c46a"
+
+                elif direction == "down":
+
+                    candle_color = "#e53935"
+
+                else:
+
+                    candle_color = "#8b949e"
+
+
+                # ---------------------------------------------
+                # ARKA PLAN
+                # ---------------------------------------------
+
+                background = "#131b24"
+                border = "#263442"
+
+
+                # Haftalık mum
+                # aylık açılış altında
+                if (
+                    parent_type == "weekly"
+                    and below_parent
+                ):
+
+                    background = "#31135c"
+                    border = "#8e44ff"
+
+
+                # Günlük mum
+                # haftalık açılış altında
+                elif (
+                    parent_type == "daily"
+                    and below_parent
+                ):
+
+                    background = "#082f55"
+                    border = "#168cff"
+
+
+                return f"""
+                <div
+                    class="candle-box"
+                    style="
+                        background:{background};
+                        border-color:{border};
+                    "
+                >
+                    <div
+                        class="candle-inner"
+                        style="
+                            background:{candle_color};
+                        "
+                    ></div>
+                </div>
+                """
+
+
+            # =================================================
+            # HTML
+            # =================================================
+
+            flow_html = """
+            <!DOCTYPE html>
+
+            <html>
+
+            <head>
+
+            <meta charset="utf-8">
+
+            <style>
+
+                body {
+                    margin:0;
+                    padding:0;
+                    font-family:Arial, sans-serif;
+                    background:transparent;
+                }
+
+                .flow-wrap {
+                    width:100%;
+                    overflow-x:auto;
+                    overflow-y:auto;
+                }
+
+                .flow-table {
+                    width:100%;
+                    border-collapse:collapse;
+                    font-size:11px;
+                }
+
+                .flow-table th {
+                    background:#f4f6f8;
+                    border:1px solid #dfe3e8;
+                    padding:6px 4px;
+                    text-align:center;
+                    white-space:nowrap;
+                }
+
+                .flow-table td {
+                    border:1px solid #e5e7eb;
+                    padding:5px 3px;
+                    text-align:center;
+                    vertical-align:middle;
+                }
+
+                .coin-name {
+                    min-width:70px;
+                    font-weight:800;
+                }
+
+                .price-cell {
+                    min-width:70px;
+                    font-weight:700;
+                }
+
+                .boxes {
+                    display:flex;
+                    justify-content:center;
+                    gap:4px;
+                    white-space:nowrap;
+                }
+
+                .candle-box {
+                    width:30px;
+                    height:30px;
+
+                    display:flex;
+                    align-items:center;
+                    justify-content:center;
+
+                    border:2px solid #263442;
+                    border-radius:5px;
+
+                    box-sizing:border-box;
+                }
+
+                .candle-inner {
+                    width:18px;
+                    height:18px;
+
+                    border-radius:3px;
+                }
+
+                .weekly-group {
+                    min-width:145px;
+                }
+
+                .daily-group {
+                    min-width:245px;
+                }
+
+                .h4-group {
+                    min-width:215px;
+                }
+
+                .h1-group {
+                    min-width:145px;
+                }
+
+                .legend {
+                    margin-bottom:12px;
+                    font-size:11px;
+                    line-height:1.6;
+                }
+
+                .green {
+                    color:#00a85a;
+                    font-weight:700;
+                }
+
+                .red {
+                    color:#d9363e;
+                    font-weight:700;
+                }
+
+                .gray {
+                    color:#7a828a;
+                    font-weight:700;
+                }
+
+                .purple {
+                    color:#9147ff;
+                    font-weight:700;
+                }
+
+                .blue {
+                    color:#168cff;
+                    font-weight:700;
+                }
+
+            </style>
+
+            </head>
+
+
+            <body>
+
+
+            <div class="legend">
+
+                <span class="green">
+                    ■ Yeşil = Yükseliş
+                </span>
+
+                &nbsp;&nbsp;
+
+                <span class="red">
+                    ■ Kırmızı = Düşüş
+                </span>
+
+                &nbsp;&nbsp;
+
+                <span class="gray">
+                    ■ Gri = Doji
+                </span>
+
+                <br>
+
+                <span class="purple">
+                    ■ Mor arka plan =
+                    Haftalık mum aylık açılışın altında
+                </span>
+
+                &nbsp;&nbsp;
+
+                <span class="blue">
+                    ■ Mavi arka plan =
+                    Günlük mum haftalık açılışın altında
+                </span>
+
+            </div>
+
+
+            <div class="flow-wrap">
+
+            <table class="flow-table">
+
+            <thead>
+
+                <tr>
+
+                    <th>
+                        Coin
+                    </th>
+
+                    <th>
+                        Haftalık (4)
+                        <br>
+                        <small>
+                            Aylık Açılışa Göre
+                        </small>
+                    </th>
+
+                    <th>
+                        Günlük (7)
+                        <br>
+                        <small>
+                            Haftalık Açılışa Göre
+                        </small>
+                    </th>
+
+                    <th>
+                        4 Saatlik (6)
+                    </th>
+
+                    <th>
+                        1 Saatlik (4)
+                    </th>
+
+                    <th>
+                        Fiyat
+                    </th>
+
+                </tr>
+
+            </thead>
+
+            <tbody>
+            """
+
+
+            for coin in flow_data:
+
+                weekly = coin.get(
+                    "weekly",
+                    []
+                )
+
+                daily = coin.get(
+                    "daily",
+                    []
+                )
+
+                h4 = coin.get(
+                    "h4",
+                    []
+                )
+
+                h1 = coin.get(
+                    "h1",
+                    []
+                )
+
+                current_price = coin.get(
+                    "price",
+                    ""
+                )
+
+
+                weekly_boxes = "".join(
+                    candle_box(
+                        candle,
+                        "weekly"
+                    )
+                    for candle in weekly
+                )
+
+
+                daily_boxes = "".join(
+                    candle_box(
+                        candle,
+                        "daily"
+                    )
+                    for candle in daily
+                )
+
+
+                h4_boxes = "".join(
+                    candle_box(
+                        candle
+                    )
+                    for candle in h4
+                )
+
+
+                h1_boxes = "".join(
+                    candle_box(
+                        candle
+                    )
+                    for candle in h1
+                )
+
+
+                flow_html += f"""
+                <tr>
+
+                    <td class="coin-name">
+                        {coin.get("coin", "")}
+                    </td>
+
+                    <td class="weekly-group">
+                        <div class="boxes">
+                            {weekly_boxes}
+                        </div>
+                    </td>
+
+                    <td class="daily-group">
+                        <div class="boxes">
+                            {daily_boxes}
+                        </div>
+                    </td>
+
+                    <td class="h4-group">
+                        <div class="boxes">
+                            {h4_boxes}
+                        </div>
+                    </td>
+
+                    <td class="h1-group">
+                        <div class="boxes">
+                            {h1_boxes}
+                        </div>
+                    </td>
+
+                    <td class="price-cell">
+                        {current_price}
+                    </td>
+
+                </tr>
+                """
+
+
+            flow_html += """
+            </tbody>
+
+            </table>
+
+            </div>
+
+            </body>
+
+            </html>
+            """
+
+
+            components.html(
+                flow_html,
+                height=820,
+                scrolling=True
+            )
