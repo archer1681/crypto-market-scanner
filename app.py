@@ -1,5 +1,6 @@
 import time
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 
 from coins import COINS
@@ -98,7 +99,7 @@ df["Altında"] = df.apply(
 
 
 # =========================================================
-# İLK AÇILIŞTA EN ÇOK YÜKSELENLER ÜSTTE
+# SIRALAMA
 # =========================================================
 
 df = df.sort_values(
@@ -327,7 +328,7 @@ with tab2:
 
 
     # -----------------------------------------------------
-    # FİYAT FORMAT
+    # FORMATLAR
     # -----------------------------------------------------
 
     def fmt_price(value):
@@ -336,13 +337,6 @@ with tab2:
         except:
             return str(value)
 
-
-    # -----------------------------------------------------
-    # SEVİYEYE GÖRE YÜZDE
-    #
-    # + = fiyat seviyenin üzerinde
-    # - = fiyat seviyenin altında
-    # -----------------------------------------------------
 
     def level_percent(price, level):
 
@@ -355,13 +349,6 @@ with tab2:
             * 100
         )
 
-
-    # -----------------------------------------------------
-    # TEK HÜCRE
-    #
-    # Fiyat üstte
-    # Yüzde altta
-    # -----------------------------------------------------
 
     def level_cell(price, level):
 
@@ -398,19 +385,28 @@ with tab2:
 
 
     # -----------------------------------------------------
-    # CSS
-    #
-    # Amaç:
-    # 12 seviyeyi mümkün olduğunca tek ekrana sığdırmak
+    # HTML + CSS
     # -----------------------------------------------------
 
-    st.markdown(
-        """
-        <style>
+    html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <meta charset="utf-8">
+
+    <style>
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background: transparent;
+        }
 
         .ohlc-wrap {
             width: 100%;
             overflow-x: auto;
+            overflow-y: auto;
         }
 
         .ohlc-table {
@@ -439,18 +435,18 @@ with tab2:
         .coin-cell {
             font-weight: 700;
             white-space: nowrap;
-            width: 55px;
+            width: 58px;
         }
 
         .current-price {
             font-weight: 700;
             white-space: nowrap;
-            width: 60px;
+            width: 62px;
         }
 
         .level-cell {
-            line-height: 1.05;
-            min-width: 50px;
+            line-height: 1.0;
+            min-width: 46px;
         }
 
         .level-price {
@@ -460,7 +456,7 @@ with tab2:
         }
 
         .level-pct {
-            margin-top: 3px;
+            margin-top: 2px;
             font-size: 9px;
             font-weight: 700;
             white-space: nowrap;
@@ -478,22 +474,12 @@ with tab2:
             color: #ea3943;
         }
 
-        .period-head {
-            font-size: 11px;
-            font-weight: 800;
-        }
+    </style>
 
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
+    </head>
 
+    <body>
 
-    # -----------------------------------------------------
-    # TABLO HTML
-    # -----------------------------------------------------
-
-    html = """
     <div class="ohlc-wrap">
 
     <table class="ohlc-table">
@@ -641,14 +627,20 @@ with tab2:
 
     html += """
     </tbody>
+
     </table>
+
     </div>
+
+    </body>
+    </html>
     """
 
 
-    st.markdown(
+    components.html(
         html,
-        unsafe_allow_html=True
+        height=760,
+        scrolling=True
     )
 
 
